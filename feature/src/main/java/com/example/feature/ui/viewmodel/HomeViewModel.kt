@@ -20,7 +20,7 @@ class HomeViewModel @Inject constructor(
     private val getNewsUseCase: GetNewsUseCase,
     private val newMapper: Mapper<NewEntity, NewUiModel>,
     @Named("newsSourceDisplay") private val newsSourceDisplay: String
-): BaseViewModel<HomeContract.Event, HomeContract.State, HomeContract.Effect>() {
+) : BaseViewModel<HomeContract.Event, HomeContract.State, HomeContract.Effect>() {
 
     private val allNewsList: ArrayList<NewUiModel> = ArrayList()
 
@@ -50,9 +50,9 @@ class HomeViewModel @Inject constructor(
                 .onStart {
                     if (page == 1) setState { copy(homeState = HomeContract.HomeState.Loading) }
                 }
-                .catch {
-                    // Set Effect
-                    setEffect { HomeContract.Effect.ShowError(message = it.message) }
+                .catch { e ->
+                    val message = e.message ?: "Failed to load news."
+                    setEffect { HomeContract.Effect.ShowError(message = message) }
                     setState { copy(homeState = HomeContract.HomeState.Idle) }
                 }
                 .collect { pagingModel ->
@@ -61,10 +61,12 @@ class HomeViewModel @Inject constructor(
                     allNewsList.addAll(currentNewsList)
                     setState {
                         copy(
-                            homeState = if (allNewsList.isNotEmpty()) HomeContract.HomeState.Success(
-                                news = PagingModel(allNewsList, pagingModel.total, pagingModel.currentPage),
-                                title = newsSourceDisplay
-                            ) else HomeContract.HomeState.Empty
+                            homeState = if (allNewsList.isNotEmpty())
+                                HomeContract.HomeState.Success(
+                                    news = PagingModel(allNewsList, pagingModel.total, pagingModel.currentPage),
+                                    title = newsSourceDisplay
+                                )
+                            else HomeContract.HomeState.Empty
                         )
                     }
                 }
@@ -72,7 +74,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun loadMore() {
-        when(val state = currentState.homeState) {
+        when (val state = currentState.homeState) {
             is HomeContract.HomeState.Success -> {
                 if (state.news.total > allNewsList.size)
                     fetchData(state.news.currentPage + 1)
@@ -80,5 +82,4 @@ class HomeViewModel @Inject constructor(
             else -> return
         }
     }
-
 }

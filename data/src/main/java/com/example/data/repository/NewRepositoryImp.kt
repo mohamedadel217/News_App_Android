@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import com.example.common.Mapper
 import com.example.common.PagingModel
+import com.example.common.RepositoryException
 import com.example.common.toEpochMillisFromServer
 import com.example.data.model.NewDTO
 import com.example.domain.entity.NewEntity
@@ -19,16 +20,29 @@ class NewRepositoryImp @Inject constructor(
 ) : NewRepository {
 
     override suspend fun getNews(page: Int): Flow<PagingModel<List<NewEntity>>> = flow {
+        var remoteErr: Throwable? = null
+
         try {
             val remote = remoteDataSource.getNews(page, newsSource)
             val mapped = newMapper.fromList(remote.data)
             val sorted = mapped.sortedByDescending { it.publishedAt.toEpochMillisFromServer() }
             emit(PagingModel(data = sorted, total = remote.total, currentPage = page))
-        } catch (_: Exception) {
+            return@flow
+        } catch (t: Throwable) {
+            remoteErr = t
+        }
+
+        var localErr: Throwable? = null
+        try {
             val local = localDataSource.getNews()
             val mapped = newMapper.fromList(local.data)
             val sorted = mapped.sortedByDescending { it.publishedAt.toEpochMillisFromServer() }
             emit(PagingModel(data = sorted, total = local.total, currentPage = page))
+            return@flow
+        } catch (t: Throwable) {
+            localErr = t
         }
+
+        throw RepositoryException(remoteCause = remoteErr, localCause = localErr)
     }
 }

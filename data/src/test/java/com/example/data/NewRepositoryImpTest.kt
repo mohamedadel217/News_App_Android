@@ -2,6 +2,7 @@ package com.example.data
 
 import app.cash.turbine.test
 import com.example.common.PagingModel
+import com.example.common.RepositoryException
 import com.example.common.toEpochMillisFromServer
 import com.example.data.mapper.NewDataDomainMapper
 import com.example.data.model.NewDTO
@@ -45,8 +46,8 @@ class NewRepositoryImpTest {
     }
 
     @Test
-    fun `test get news remote success sorted by date desc`() = runTest {
-        val remotePage = unsortedRemotePage()
+    fun remote_success_sorted_desc() = runTest {
+        val remotePage = unsortedPage()
         coEvery { remoteDataSource.getNews(1, newsSource) } returns remotePage
 
         newRepository.getNews(1).test {
@@ -73,9 +74,9 @@ class NewRepositoryImpTest {
     }
 
     @Test
-    fun `test get data from local when remote fails and sorted desc`() = runTest {
-        val localPage = unsortedLocalPage()
-        coEvery { remoteDataSource.getNews(1, newsSource) } throws Exception()
+    fun remote_fail_local_success_sorted_desc() = runTest {
+        val localPage = unsortedPage()
+        coEvery { remoteDataSource.getNews(1, newsSource) } throws IllegalStateException("remote")
         coEvery { localDataSource.getNews() } returns localPage
 
         newRepository.getNews(1).test {
@@ -102,36 +103,32 @@ class NewRepositoryImpTest {
     }
 
     @Test
-    fun `test get error when remote fail and local fail`() = runTest {
-        coEvery { remoteDataSource.getNews(1, newsSource) } throws Exception()
-        coEvery { localDataSource.getNews() } throws Exception()
+    fun remote_fail_local_fail_throws_repository_exception() = runTest {
+        coEvery { remoteDataSource.getNews(1, newsSource) } throws IllegalStateException("remote boom")
+        coEvery { localDataSource.getNews() } throws IllegalArgumentException("local boom")
 
         newRepository.getNews(1).test {
             val error = awaitError()
-            assertThat(error).isInstanceOf(Exception::class.java)
+            assertThat(error).isInstanceOf(RepositoryException::class.java)
+            val re = error as RepositoryException
+            assertThat(re.remoteCause).isInstanceOf(IllegalStateException::class.java)
+            assertThat(re.localCause).isInstanceOf(IllegalArgumentException::class.java)
+            assertThat(re.message).contains("Failed to load news")
+            assertThat(re.message).contains("remote boom")
+            assertThat(re.message).contains("local boom")
         }
-
-        coVerify { remoteDataSource.getNews(1, newsSource) }
     }
 
-    private fun unsortedRemotePage(): PagingModel<List<NewDTO>> {
+    private fun unsortedPage(): PagingModel<List<NewDTO>> {
         val base = TestDataGenerator.generateNews()
         val items = base.data.toMutableList()
-        if (items.size >= 3) {
+        if (items.size >= 6) {
             items[0] = items[0].copy(publishedAt = "2024-01-03T10:15:30.000Z")
             items[1] = items[1].copy(publishedAt = "2024-01-01T09:00:00.000Z")
             items[2] = items[2].copy(publishedAt = "2024-01-02T12:00:00.000Z")
-        }
-        return PagingModel(data = items, total = base.total, currentPage = base.currentPage)
-    }
-
-    private fun unsortedLocalPage(): PagingModel<List<NewDTO>> {
-        val base = TestDataGenerator.generateNews()
-        val items = base.data.toMutableList()
-        if (items.size >= 3) {
-            items[0] = items[0].copy(publishedAt = "2024-01-05T00:00:00.000Z")
-            items[1] = items[1].copy(publishedAt = "2024-01-03T00:00:00.000Z")
-            items[2] = items[2].copy(publishedAt = "2024-01-04T00:00:00.000Z")
+            items[3] = items[3].copy(publishedAt = "2023-12-31T23:59:59.000Z")
+            items[4] = items[4].copy(publishedAt = "2024-01-03T11:00:00.000Z")
+            items[5] = items[5].copy(publishedAt = "2024-01-02T00:00:01.000Z")
         }
         return PagingModel(data = items, total = base.total, currentPage = base.currentPage)
     }

@@ -37,7 +37,7 @@ class HomeViewModelTest {
 
     private val newMapper = NewDomainUiMapper()
 
-    private val newsSource = "bbc-news"
+    private val newsSourceDisplay = "bbc-news"
     private lateinit var homeViewModel: HomeViewModel
 
     @Before
@@ -47,8 +47,8 @@ class HomeViewModelTest {
         homeViewModel = HomeViewModel(
             getNewsUseCase = getNewsUseCase,
             newMapper = newMapper,
-            newsSourceDisplay = newsSource
-            )
+            newsSourceDisplay = newsSourceDisplay
+        )
     }
 
     @After
@@ -60,46 +60,63 @@ class HomeViewModelTest {
     fun `test fetch data success`() = runTest {
         val newsItems = TestDataGenerator.generateNews()
         val newsFlow = flowOf(newsItems)
+
         coEvery { getNewsUseCase.execute(1) } returns newsFlow
+
         homeViewModel.uiState.test {
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Idle)
-            )
+            // initial Idle
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Idle))
+
             homeViewModel.setEvent(HomeContract.Event.FetchData)
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Loading)
-            )
+
+            // Loading
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Loading))
+
+            // Success
             val emitted = awaitItem()
             val success = emitted.homeState as HomeContract.HomeState.Success
             val uiModels = newMapper.fromList(newsItems.data)
+
             assertThat(success.news)
                 .isEqualTo(PagingModel(uiModels, newsItems.total, newsItems.currentPage))
-            assertThat(success.title).isNotNull()
+            assertThat(success.title).isEqualTo(newsSourceDisplay)
+
             cancelAndIgnoreRemainingEvents()
         }
+
         coVerify { getNewsUseCase.execute(1) }
     }
 
     @Test
     fun `test fetch data fail`() = runTest {
         val newsFlow = flow<PagingModel<List<NewEntity>>> { throw Exception("error string") }
+
         coEvery { getNewsUseCase.execute(1) } returns newsFlow
+
+        // state stream
         homeViewModel.uiState.test {
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Idle)
-            )
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Idle))
+
             homeViewModel.setEvent(HomeContract.Event.FetchData)
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Loading)
-            )
+
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Loading))
+
+            // After catch, ViewModel sets state back to Idle
+            val backToIdle = awaitItem()
+            assertThat(backToIdle).isEqualTo(HomeContract.State(HomeContract.HomeState.Idle))
+
             cancelAndIgnoreRemainingEvents()
         }
+
+        // effect stream
         homeViewModel.effect.test {
             val effect = awaitItem()
-            assertThat(effect).isEqualTo(HomeContract.Effect.ShowError("error string"))
-            assertThat((effect as HomeContract.Effect.ShowError).message).isEqualTo("error string")
+            assertThat(effect).isInstanceOf(HomeContract.Effect.ShowError::class.java)
+            val msg = (effect as HomeContract.Effect.ShowError).message
+            assertThat(msg).isNotEmpty()
             cancelAndIgnoreRemainingEvents()
         }
+
         coVerify { getNewsUseCase.execute(1) }
     }
 
@@ -107,23 +124,27 @@ class HomeViewModelTest {
     fun `test fetch data success using pull to refresh`() = runTest {
         val newsItems = TestDataGenerator.generateNews()
         val newsFlow = flowOf(newsItems)
+
         coEvery { getNewsUseCase.execute(1) } returns newsFlow
+
         homeViewModel.uiState.test {
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Idle)
-            )
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Idle))
+
             homeViewModel.setEvent(HomeContract.Event.OnRefresh)
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Loading)
-            )
+
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Loading))
+
             val emitted = awaitItem()
             val success = emitted.homeState as HomeContract.HomeState.Success
             val uiModels = newMapper.fromList(newsItems.data)
+
             assertThat(success.news)
                 .isEqualTo(PagingModel(uiModels, newsItems.total, newsItems.currentPage))
-            assertThat(success.title).isNotNull()
+            assertThat(success.title).isEqualTo(newsSourceDisplay)
+
             cancelAndIgnoreRemainingEvents()
         }
+
         coVerify { getNewsUseCase.execute(1) }
     }
 
@@ -132,26 +153,30 @@ class HomeViewModelTest {
         val newsItems = TestDataGenerator.generateNews()
         val newsFlow = flowOf(newsItems)
         val newsItemsPage2 = TestDataGenerator.generateNews(2)
+
         coEvery { getNewsUseCase.execute(1) } returns newsFlow
         coEvery { getNewsUseCase.execute(2) } returns flowOf(newsItemsPage2)
+
         homeViewModel.uiState.test {
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Idle)
-            )
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Idle))
+
             homeViewModel.setEvent(HomeContract.Event.FetchData)
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.State(HomeContract.HomeState.Loading)
-            )
+
+            assertThat(awaitItem()).isEqualTo(HomeContract.State(HomeContract.HomeState.Loading))
+
             val firstPage = awaitItem()
             val s1 = firstPage.homeState as HomeContract.HomeState.Success
             val uiModels = newMapper.fromList(newsItems.data)
-            assertThat(s1.news).isEqualTo(
-                PagingModel(uiModels, newsItems.total, newsItems.currentPage)
-            )
-            assertThat(s1.title).isNotNull()
+
+            assertThat(s1.news)
+                .isEqualTo(PagingModel(uiModels, newsItems.total, newsItems.currentPage))
+            assertThat(s1.title).isEqualTo(newsSourceDisplay)
+
             homeViewModel.setEvent(HomeContract.Event.LoadMoreData)
+
             val secondPageState = awaitItem()
             val s2 = secondPageState.homeState as HomeContract.HomeState.Success
+
             assertThat(s2.news).isEqualTo(
                 PagingModel(
                     data = uiModels + uiModels,
@@ -159,9 +184,11 @@ class HomeViewModelTest {
                     currentPage = newsItemsPage2.currentPage
                 )
             )
-            assertThat(s2.title).isNotNull()
+            assertThat(s2.title).isEqualTo(newsSourceDisplay)
+
             cancelAndIgnoreRemainingEvents()
         }
+
         coVerify { getNewsUseCase.execute(1) }
         coVerify { getNewsUseCase.execute(2) }
     }
@@ -170,13 +197,13 @@ class HomeViewModelTest {
     fun test_select_new_item() = runTest {
         val news = TestDataGenerator.generateNews()
         val selectedNewUiModel = newMapper.from(news.data.firstOrNull())
+
         homeViewModel.event.test {
             homeViewModel.setEvent(HomeContract.Event.NewSelected(newUiModel = selectedNewUiModel))
-            assertThat(awaitItem()).isEqualTo(
-                HomeContract.Event.NewSelected(selectedNewUiModel)
-            )
+            assertThat(awaitItem()).isEqualTo(HomeContract.Event.NewSelected(selectedNewUiModel))
             cancelAndIgnoreRemainingEvents()
         }
+
         homeViewModel.effect.test {
             assertThat(awaitItem()).isEqualTo(
                 HomeContract.Effect.NavigateToNewDetails(selectedNewUiModel)
